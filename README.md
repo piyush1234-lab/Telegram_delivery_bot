@@ -1,1 +1,0 @@
-# Telegram_delivery_bot
