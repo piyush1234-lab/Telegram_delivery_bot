@@ -1,4 +1,5 @@
 import os
+import json
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -8,33 +9,124 @@ from telegram.ext import (
     filters
 )
 
-# ================= CONFIG =================
-
 TOKEN = os.environ["BOT_TOKEN"]
-ADMIN_ID = 6803356420  # your Telegram user ID
+ADMIN_ID = 6803356420
 
-# project_key -> saved_message_id
+# ID of the message in Saved Messages that stores mapping
+MAP_MESSAGE_ID = None
 FILE_MAP = {}
+
+# ================= LOAD MAP =================
+
+async def load_map(context: ContextTypes.DEFAULT_TYPE):
+    global FILE_MAP, MAP_MESSAGE_ID
+
+    history = await context.bot.get_chat_history(chat_id=ADMIN_ID, limit=20)
+    async for msg in history:
+        if msg.text and msg.text.startswith("{"):
+            try:
+                FILE_MAP = json.loads(msg.text)
+                MAP_MESSAGE_ID = msg.message_id
+                return
+            except:
+                pass
+
+    # If not found, create new map
+    sent = await context.bot.send_message(
+        chat_id=ADMIN_ID,
+        text="{}"
+    )
+    MAP_MESSAGE_ID = sent.message_id
+    FILE_MAP = {}
+
+# ================= SAVE MAP =================
+
+async def save_map(context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.edit_message_text(
+        chat_id=ADMIN_ID,
+        message_id=MAP_MESSAGE_ID,
+        text=json.dumps(FILE_MAP)
+    )
 
 # ================= START =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args
+    if not FILE_MAP:
+        await load_map(context)
 
-    if args:
-        key = args[0]
-        if key in FILE_MAP:
-            await context.bot.copy_message(
-                chat_id=update.effective_chat.id,
-                from_chat_id=ADMIN_ID,  # Saved Messages is your own chat
-                message_id=FILE_MAP[key],
-                caption=(
-                    "🎉 Here’s your code!\n\n"
-                    "❤️ Like\n"
-                    "📌 Save\n"
-                    "💬 Comment\n\n"
-                    "Support the channel for more projects 🚀"
-                )
+    args = context.args
+    if args and args[0] in FILE_MAP:
+        await context.bot.copy_message(
+            chat_id=update.effective_chat.id,
+            from_chat_id=ADMIN_ID,
+            message_id=FILE_MAP[args[0]],
+            caption="🎉 Here’s your code!"
+        )
+        return
+
+    await update.message.reply_text(
+        "Click GET CODE from the channel post."
+    )
+
+# ================= ADD =================
+
+async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /add project_key")
+        return
+
+    context.user_data["pending_key"] = context.args[0]
+    await update.message.reply_text("Send ZIP file now.")
+
+# ================= CAPTURE ZIP =================
+
+async def capture_zip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    key = context.user_data.get("pending_key")
+    if not key:
+        return
+
+    forwarded = await update.message.forward(chat_id=ADMIN_ID)
+
+    FILE_MAP[key] = forwarded.message_id
+    await save_map(context)
+
+    context.user_data.pop("pending_key", None)
+    await update.message.reply_text("✅ ZIP saved permanently.")
+
+# ================= DELETE =================
+
+async def delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    key = context.args[0]
+    if key in FILE_MAP:
+        del FILE_MAP[key]
+        await save_map(context)
+        await update.message.reply_text("Deleted.")
+    else:
+        await update.message.reply_text("Key not found.")
+
+# ================= INIT =================
+
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("add", add))
+    app.add_handler(CommandHandler("delete", delete))
+    app.add_handler(MessageHandler(filters.Document.ALL, capture_zip))
+
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()                )
             )
             return
 
