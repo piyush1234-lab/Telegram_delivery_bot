@@ -1,5 +1,4 @@
 import os
-import json
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -12,29 +11,89 @@ from telegram.ext import (
 TOKEN = os.environ["BOT_TOKEN"]
 ADMIN_ID = 6803356420
 
-# ID of the message in Saved Messages that stores mapping
-MAP_MESSAGE_ID = None
+# In-memory storage (stable, no crash)
 FILE_MAP = {}
 
-# ================= LOAD MAP =================
+# ================= START =================
 
-async def load_map(context: ContextTypes.DEFAULT_TYPE):
-    global FILE_MAP, MAP_MESSAGE_ID
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
 
-    history = await context.bot.get_chat_history(chat_id=ADMIN_ID, limit=20)
-    async for msg in history:
-        if msg.text and msg.text.startswith("{"):
-            try:
-                FILE_MAP = json.loads(msg.text)
-                MAP_MESSAGE_ID = msg.message_id
-                return
-            except:
-                pass
+    if args and args[0] in FILE_MAP:
+        await context.bot.send_document(
+            chat_id=update.effective_chat.id,
+            document=FILE_MAP[args[0]],
+            caption="🎉 Here’s your code!"
+        )
+        return
 
-    # If not found, create new map
-    sent = await context.bot.send_message(
-        chat_id=ADMIN_ID,
-        text="{}"
+    await update.message.reply_text(
+        "Click GET CODE from the channel post."
+    )
+
+# ================= ADD =================
+
+async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /add project_key")
+        return
+
+    context.user_data["pending_key"] = context.args[0]
+    await update.message.reply_text("📦 Send the ZIP file now.")
+
+# ================= CAPTURE ZIP =================
+
+async def capture_zip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    key = context.user_data.get("pending_key")
+    if not key:
+        return
+
+    FILE_MAP[key] = update.message.document.file_id
+    context.user_data.pop("pending_key", None)
+
+    await update.message.reply_text(
+        f"✅ ZIP saved for `{key}`.\n"
+        f"⚠️ Note: Data resets on redeploy.",
+        parse_mode="Markdown"
+    )
+
+# ================= DELETE =================
+
+async def delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /delete project_key")
+        return
+
+    key = context.args[0]
+    if key in FILE_MAP:
+        del FILE_MAP[key]
+        await update.message.reply_text("🗑️ Deleted.")
+    else:
+        await update.message.reply_text("❌ Key not found.")
+
+# ================= INIT =================
+
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("add", add))
+    app.add_handler(CommandHandler("delete", delete))
+    app.add_handler(MessageHandler(filters.Document.ALL, capture_zip))
+
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()        text="{}"
     )
     MAP_MESSAGE_ID = sent.message_id
     FILE_MAP = {}
