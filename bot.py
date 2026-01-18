@@ -1,5 +1,4 @@
 import os
-import json
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -12,49 +11,42 @@ from telegram.ext import (
 # ================= CONFIG =================
 
 TOKEN = os.environ["BOT_TOKEN"]
-ADMIN_ID = 6803356420          # your Telegram user ID
-DATA_FILE = "files.json"
+ADMIN_ID = 6803356420  # your Telegram user ID
 
-# ================= LOAD STORED FILES =================
+# project_key -> saved_message_id
+FILE_MAP = {}
 
-if os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "r") as f:
-        FILE_IDS = json.load(f)
-else:
-    FILE_IDS = {}
-
-def save_files():
-    with open(DATA_FILE, "w") as f:
-        json.dump(FILE_IDS, f)
-
-# ================= START (USER) =================
+# ================= START =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
 
-    # User came via GET CODE button
-    if args and args[0] in FILE_IDS:
-        await update.message.reply_document(
-            document=FILE_IDS[args[0]],
-            caption=(
-                "🎉 Here’s your code!\n\n"
-                "❤️ Like\n"
-                "📌 Save\n"
-                "💬 Comment\n\n"
-                "Support the channel for more projects 🚀"
+    if args:
+        key = args[0]
+        if key in FILE_MAP:
+            await context.bot.copy_message(
+                chat_id=update.effective_chat.id,
+                from_chat_id=ADMIN_ID,  # Saved Messages is your own chat
+                message_id=FILE_MAP[key],
+                caption=(
+                    "🎉 Here’s your code!\n\n"
+                    "❤️ Like\n"
+                    "📌 Save\n"
+                    "💬 Comment\n\n"
+                    "Support the channel for more projects 🚀"
+                )
             )
-        )
+            return
+
+        await update.message.reply_text("❌ Code not found.")
         return
 
-    # Invalid or normal start
     await update.message.reply_text(
         "👋 Welcome!\n\n"
-        "Click the *GET CODE* button from the channel post "
-        "to receive project files.",
-        parse_mode="Markdown"
+        "Click the GET CODE button from the channel post."
     )
 
-# ================= ADD FILE (ADMIN ONLY) =================
+# ================= ADD FILE =================
 
 async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -66,11 +58,9 @@ async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    key = context.args[0].strip()
-    context.user_data["pending_key"] = key
-
+    context.user_data["pending_key"] = context.args[0]
     await update.message.reply_text(
-        f"📦 Now send the ZIP file for `{key}`",
+        f"📦 Now send the ZIP file for `{context.args[0]}`",
         parse_mode="Markdown"
     )
 
@@ -84,42 +74,37 @@ async def capture_zip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not key:
         return
 
-    FILE_IDS[key] = update.message.document.file_id
-    save_files()
+    # Forward ZIP to Saved Messages
+    msg = await update.message.forward(chat_id=ADMIN_ID)
+
+    FILE_MAP[key] = msg.message_id
     context.user_data.pop("pending_key", None)
 
     await update.message.reply_text(
-        f"✅ ZIP saved for `{key}`.\n\n"
-        f"You can now use this key in the posting bot.",
+        f"✅ ZIP saved for `{key}`.\n"
+        f"GET CODE button will now work.",
         parse_mode="Markdown"
     )
 
-# ================= DELETE FILE (ADMIN ONLY) =================
+# ================= DELETE =================
 
 async def delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
     if not context.args:
-        await update.message.reply_text(
-            "Usage:\n/delete project_key\n\nExample:\n/delete bike_product"
-        )
+        await update.message.reply_text("Usage: /delete project_key")
         return
 
-    key = context.args[0].strip()
+    key = context.args[0]
 
-    if key not in FILE_IDS:
-        await update.message.reply_text(
-            f"❌ `{key}` not found.",
-            parse_mode="Markdown"
-        )
+    if key not in FILE_MAP:
+        await update.message.reply_text("❌ Key not found.")
         return
 
-    del FILE_IDS[key]
-    save_files()
-
+    del FILE_MAP[key]
     await update.message.reply_text(
-        f"🗑️ Deleted project `{key}` successfully.",
+        f"🗑️ `{key}` removed successfully.",
         parse_mode="Markdown"
     )
 
