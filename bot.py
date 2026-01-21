@@ -10,8 +10,8 @@ from telegram.ext import (
 
 # ================= CONFIG =================
 
-TOKEN = os.environ["BOT_TOKEN"]          # Bot token from @BotFather
-ADMIN_ID = 6803356420                    # Your Telegram user ID
+TOKEN = os.environ["BOT_TOKEN"]
+ADMIN_ID = 6803356420
 
 # In-memory storage: project_key -> file_id
 FILE_MAP = {}
@@ -21,7 +21,6 @@ FILE_MAP = {}
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
 
-    # Public delivery flow
     if args and args[0] in FILE_MAP:
         await context.bot.send_document(
             chat_id=update.effective_chat.id,
@@ -43,7 +42,7 @@ async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await update.message.reply_text(
-            "Usage:\n/add project_key\n\nExample:\n/add bike_project"
+            "Usage:\n/add project_key\n\nExample:\n/add h1"
         )
         return
 
@@ -51,8 +50,7 @@ async def add(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if key in FILE_MAP:
         await update.message.reply_text(
-            "❌ This key already exists.\n"
-            "Use /edit to replace the file."
+            "❌ Key already exists. Use /edit."
         )
         return
 
@@ -66,24 +64,17 @@ async def edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not context.args:
-        await update.message.reply_text(
-            "Usage:\n/edit project_key"
-        )
+        await update.message.reply_text("Usage:\n/edit project_key")
         return
 
     key = context.args[0]
 
     if key not in FILE_MAP:
-        await update.message.reply_text(
-            "❌ This key does not exist.\n"
-            "Use /add to create it first."
-        )
+        await update.message.reply_text("❌ Key not found.")
         return
 
     context.user_data["pending_edit"] = key
-    await update.message.reply_text(
-        "✏️ Send the new document to replace the existing file."
-    )
+    await update.message.reply_text("✏️ Send the new document now.")
 
 # ================= DELETE =================
 
@@ -92,9 +83,7 @@ async def delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not context.args:
-        await update.message.reply_text(
-            "Usage:\n/delete project_key"
-        )
+        await update.message.reply_text("Usage:\n/delete project_key")
         return
 
     key = context.args[0]
@@ -105,28 +94,25 @@ async def delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Key not found.")
 
-# ================= LIST =================
+# ================= LIST (SEND FILES) =================
 
 async def list_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
     if not FILE_MAP:
-        await update.message.reply_text(
-            "📂 No files are currently mapped."
-        )
+        await update.message.reply_text("📂 No files mapped.")
         return
 
-    lines = ["📁 *Mapped Projects:*", ""]
+    await update.message.reply_text("📁 Sending all mapped files:")
 
     for key, file_id in FILE_MAP.items():
-        short_id = file_id[:20] + "..."
-        lines.append(f"• `{key}` → `{short_id}`")
-
-    await update.message.reply_text(
-        "\n".join(lines),
-        parse_mode="Markdown"
-    )
+        await context.bot.send_document(
+            chat_id=update.effective_chat.id,
+            document=file_id,
+            caption=f"🔑 Key: `{key}`",
+            parse_mode="Markdown"
+        )
 
 # ================= CAPTURE DOCUMENT =================
 
@@ -138,26 +124,22 @@ async def capture_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not doc:
         return
 
-    # ADD flow
     if "pending_add" in context.user_data:
         key = context.user_data.pop("pending_add")
         FILE_MAP[key] = doc.file_id
 
         await update.message.reply_text(
-            f"✅ File added for `{key}`.\n"
-            f"⚠️ Data resets on bot restart.",
+            f"✅ File added for `{key}`.\n⚠️ Data resets on bot restart.",
             parse_mode="Markdown"
         )
         return
 
-    # EDIT flow
     if "pending_edit" in context.user_data:
         key = context.user_data.pop("pending_edit")
         FILE_MAP[key] = doc.file_id
 
         await update.message.reply_text(
-            f"🔁 File replaced for `{key}`.\n"
-            f"⚠️ Data resets on bot restart.",
+            f"🔁 File replaced for `{key}`.\n⚠️ Data resets on bot restart.",
             parse_mode="Markdown"
         )
         return
