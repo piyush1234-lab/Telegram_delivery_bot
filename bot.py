@@ -10,8 +10,8 @@ from telegram.ext import (
 
 # ================= CONFIG =================
 
-TOKEN = os.environ["BOT_TOKEN"]
-ADMIN_ID = 6803356420  # your Telegram user ID
+TOKEN = os.environ["BOT_TOKEN"]          # Bot token from @BotFather
+ADMIN_ID = 6803356420                    # Your Telegram user ID
 
 # In-memory storage: project_key -> file_id
 FILE_MAP = {}
@@ -85,6 +85,49 @@ async def edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✏️ Send the new document to replace the existing file."
     )
 
+# ================= DELETE =================
+
+async def delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "Usage:\n/delete project_key"
+        )
+        return
+
+    key = context.args[0]
+
+    if key in FILE_MAP:
+        del FILE_MAP[key]
+        await update.message.reply_text("🗑️ Deleted.")
+    else:
+        await update.message.reply_text("❌ Key not found.")
+
+# ================= LIST =================
+
+async def list_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    if not FILE_MAP:
+        await update.message.reply_text(
+            "📂 No files are currently mapped."
+        )
+        return
+
+    lines = ["📁 *Mapped Projects:*", ""]
+
+    for key, file_id in FILE_MAP.items():
+        short_id = file_id[:20] + "..."
+        lines.append(f"• `{key}` → `{short_id}`")
+
+    await update.message.reply_text(
+        "\n".join(lines),
+        parse_mode="Markdown"
+    )
+
 # ================= CAPTURE DOCUMENT =================
 
 async def capture_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -119,26 +162,6 @@ async def capture_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-# ================= DELETE =================
-
-async def delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-    if not context.args:
-        await update.message.reply_text(
-            "Usage:\n/delete project_key"
-        )
-        return
-
-    key = context.args[0]
-
-    if key in FILE_MAP:
-        del FILE_MAP[key]
-        await update.message.reply_text("🗑️ Deleted.")
-    else:
-        await update.message.reply_text("❌ Key not found.")
-
 # ================= INIT =================
 
 def main():
@@ -148,6 +171,7 @@ def main():
     app.add_handler(CommandHandler("add", add))
     app.add_handler(CommandHandler("edit", edit))
     app.add_handler(CommandHandler("delete", delete))
+    app.add_handler(CommandHandler("list", list_files))
     app.add_handler(MessageHandler(filters.Document.ALL, capture_document))
 
     app.run_polling()
